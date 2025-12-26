@@ -6,7 +6,7 @@ import time
 
 from pyrogram import enums, errors, filters, types
 
-from che import anon, app, config, db, lang, queue, tasks, userbot, yt
+from che import che, app, config, db, lang, queue, tasks, userbot, yt
 from che.helpers import buttons
 
 
