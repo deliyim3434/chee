@@ -34,12 +34,14 @@ class Inline:
             ])
 
         if not remove:
-            # 1. SATIR: TEKRAR OYNAT
+            # --- 1. SATIR: DÖNGÜ ve TEKRAR (BURASI EKLENDİ) ---
+            # Loop butonu: 'controls loop' komutunu tetikler
             keyboard.append([
-                self.ikb(text="↻ TEKRAR OYNAT", callback_data=f"controls replay {chat_id}")
+                self.ikb(text="🔁 DÖNGÜ (3x)", callback_data=f"controls loop {chat_id}"),
+                self.ikb(text="↻ BAŞA SAR", callback_data=f"controls replay {chat_id}")
             ])
 
-            # 2. SATIR: OYNATMA KONTROLLERİ (Play, Pause, Skip, Stop)
+            # --- 2. SATIR: OYNATMA KONTROLLERİ ---
             keyboard.append([
                 self.ikb(text="▷", callback_data=f"controls resume {chat_id}"),
                 self.ikb(text="II", callback_data=f"controls pause {chat_id}"),
@@ -47,13 +49,13 @@ class Inline:
                 self.ikb(text="▢", callback_data=f"controls stop {chat_id}"),
             ])
 
-            # 3. SATIR: SÜRE SARMA (<< 10s | 10s >>)
+            # --- 3. SATIR: SÜRE SARMA ---
             keyboard.append([
                 self.ikb(text="≪ 10s", callback_data=f"controls seekback {chat_id} 10"),
                 self.ikb(text="10s ≫", callback_data=f"controls seek {chat_id} 10"),
             ])
 
-            # 4. SATIR: ALT MENÜ (Destek ve Grup Linki)
+            # --- 4. SATIR: ALT MENÜ ---
             keyboard.append([
                 self.ikb(text="💬 DESTEK", url=config.SUPPORT_CHAT),
                 self.ikb(text="🚀 GRUBA EKLE", url=f"https://t.me/{app.username}?startgroup=true"),
@@ -100,7 +102,6 @@ class Inline:
 
     def settings_markup(self, lang_dict: dict, admin_only: bool, cmd_delete: bool, language: str, chat_id: int) -> types.InlineKeyboardMarkup:
         """Ayarlar menüsü."""
-        # Not: Parametre ismini 'lang' yerine 'lang_dict' yaptım ki import edilen 'lang' modülü ile çakışmasın.
         return self.ikm([
             [
                 self.ikb(text="Oynatma Modu", callback_data="settings"),
