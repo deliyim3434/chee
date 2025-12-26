@@ -108,7 +108,7 @@ async def vc_watcher(sleep=15):
                             chat_id=chat_id, status=_lang["stopped"], remove=True
                         ),
                     )
-                    await anon.stop(chat_id)
+                    await che.stop(chat_id)
                     await sent.reply_text(_lang["auto_left"])
                 except errors.MessageIdInvalid:
                     pass
