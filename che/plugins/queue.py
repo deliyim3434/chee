@@ -1,6 +1,6 @@
 from pyrogram import filters, types
 from che import app, config, db, lang, queue
-from che.helpers import Track, buttons, thumb
+from che.helpers import Track, buttons
 
 @app.on_message(filters.command(["queue","kuyruk", "playing"]) & filters.group & ~app.bl_users)
 @lang.language()
