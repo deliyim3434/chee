@@ -51,6 +51,18 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_skipped"].format(user)
         should_delete_msg = True
 
+    elif action == "loop":
+        # 3 kere tekrar mantığı
+        loop_count = await db.get_loop_count(chat_id)
+        if loop_count > 0:
+            await db.set_loop_count(chat_id, 0)
+            status = "Döngü Kapalı"
+            reply = "🔁 **Döngü kapatıldı.**\nDüzenleyen: {}".format(user)
+        else:
+            await db.set_loop_count(chat_id, 3) # 3 tekrar hakkı verir
+            status = "3x Döngü"
+            reply = "🔁 **Şarkı 3 kez tekrar edilecek.**\nDüzenleyen: {}".format(user)
+
     elif action == "force":
         if len(args) >= 4:
             pos, media = queue.check_item(chat_id, args[3])
@@ -66,7 +78,8 @@ async def _controls(_, query: types.CallbackQuery):
                 if not media.file_path:
                     media.file_path = await yt.download(media.id, video=media.video)
                 media.message_id = msg.id
-                return await anon.play_media(chat_id, msg, media)
+                # 'anon' yerine 'che' kullanılması muhtemeldir
+                return await che.play_media(chat_id, msg, media)
         else:
              return await query.edit_message_text(query.lang["play_expired"])
 
@@ -96,7 +109,6 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_seeked_back"].format(seek_seconds, user)
         should_delete_msg = True
 
-    
     if not reply and not status:
         return
 
@@ -116,10 +128,10 @@ async def _controls(_, query: types.CallbackQuery):
                 original_html = query.message.text.html
                 is_media = False
 
+            # Eski blockquote metnini temizle
             clean_text = re.sub(r"\n\n<blockquote>.*?</blockquote>", "", original_html, flags=re.DOTALL)
             
             markup = buttons.controls(chat_id, status=status if action != "resume" else None)
-            
             final_text = f"{clean_text}\n\n<blockquote>{reply}</blockquote>"
 
             if is_media:
@@ -129,10 +141,8 @@ async def _controls(_, query: types.CallbackQuery):
 
     except Exception as e:
         print(f"Controls Error: {e}")
-        try:
-             await query.answer("İşlem gerçekleştirildi.", show_alert=False)
-        except:
-            pass
+
+# --- YARDIM VE AYARLAR BÖLÜMÜ ---
 
 @app.on_callback_query(filters.regex("help") & ~app.bl_users)
 @lang.language()
