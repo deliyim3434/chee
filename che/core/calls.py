@@ -10,8 +10,8 @@ from pyrogram.types import Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-from chee import app, config, db, lang, logger, queue, userbot, yt
-from chee.helpers import Media, Track, buttons
+from che import app, config, db, lang, logger, queue, userbot, yt
+from che.helpers import Media, Track, buttons
 
 class TgCall(PyTgCalls):
     def __init__(self):
