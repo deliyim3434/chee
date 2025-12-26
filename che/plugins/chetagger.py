@@ -17,7 +17,7 @@ from pyrogram.types import (
     CallbackQuery,
     ChatMemberUpdated,
 )
-fromche import app
+from che import app
 from config import LOGGER_ID, OWNER_ID # <-- LOG_GROUP_ID yerine LOGGER_ID kullanıldı
 # kumsal.py dosyasının ArchMusic.plugins.tools altında olduğundan emin olun
 from che.plugins.cheetiket import *
