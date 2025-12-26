@@ -5,7 +5,7 @@
 
 from pyrogram import filters, types
 
-from che import anon, app, db, lang
+from che import che, app, db, lang
 from che.helpers import can_manage_vc
 
 
