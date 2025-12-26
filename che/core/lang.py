@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pyrogram import errors
 
-from chPathger
+from anony import db, logger
 
 lang_codes = {
     "ar": "Arabic",
@@ -34,7 +34,7 @@ class Language:
 
     def __init__(self):
         self.lang_codes = lang_codes
-        self.lang_dir = Path("che/locales")
+        self.lang_dir = Path("anony/locales")
         self.languages = self.load_files()
 
     def load_files(self):
