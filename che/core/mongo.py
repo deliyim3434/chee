@@ -2,10 +2,9 @@
 # Licensed under the MIT License.
 # This file is part of CheXMusic
 
-
 from random import randint
 from time import time
-
+from bson import ObjectId
 from pymongo import AsyncMongoClient
 
 # DEĞİŞİKLİK: anony -> che
@@ -46,11 +45,7 @@ class MongoDB:
         self.usersdb = self.db.users
 
     async def connect(self) -> None:
-        """Veritabanına bağlanıp bağlanamadığımızı kontrol eder.
-
-        Raises:
-            SystemExit: Veritabanı bağlantısı başarısız olursa.
-        """
+        """Veritabanına bağlanıp bağlanamadığımızı kontrol eder."""
         try:
             start = time()
             await self.mongo.admin.command("ping")
@@ -64,7 +59,7 @@ class MongoDB:
         await self.mongo.close()
         logger.info("Veritabanı bağlantısı kapatıldı.")
 
-    # ÖNBELLEK (CACHE)
+    # --- ÖNBELLEK (CACHE) METOTLARI ---
     async def get_call(self, chat_id: int) -> bool:
         return chat_id in self.active_calls
 
@@ -80,14 +75,12 @@ class MongoDB:
         return bool(self.active_calls.get(chat_id, 0))
 
     async def get_admins(self, chat_id: int, reload: bool = False) -> list[int]:
-        # DEĞİŞİKLİK: anony -> che
         from che.helpers._admins import reload_admins
-
         if chat_id not in self.admin_list or reload:
             self.admin_list[chat_id] = await reload_admins(chat_id)
         return self.admin_list[chat_id]
 
-    # YETKİLENDİRME (AUTH) METOTLARI
+    # --- YETKİLENDİRME (AUTH) METOTLARI ---
     async def _get_auth(self, chat_id: int) -> set[int]:
         if chat_id not in self.auth:
             doc = await self.authdb.find_one({"_id": chat_id}) or {}
@@ -113,76 +106,72 @@ class MongoDB:
                 {"_id": chat_id}, {"$pull": {"user_ids": user_id}}
             )
 
-    # ASİSTAN METOTLARI
+    # --- ASİSTAN METOTLARI ---
     async def set_assistant(self, chat_id: int) -> int:
         num = randint(1, len(userbot.clients))
         await self.assistantdb.update_one(
-            {"_id": chat_id},
-            {"$set": {"num": num}},
-            upsert=True,
+            {"_id": chat_id}, {"$set": {"num": num}}, upsert=True
         )
         self.assistant[chat_id] = num
         return num
 
     async def get_assistant(self, chat_id: int):
-        # DEĞİŞİKLİK: anony -> che ve anon -> che
         from che import che
-
         if chat_id not in self.assistant:
             doc = await self.assistantdb.find_one({"_id": chat_id})
             num = doc["num"] if doc else await self.set_assistant(chat_id)
             self.assistant[chat_id] = num
-
-        # DEĞİŞİKLİK: anon -> che
         return che.clients[self.assistant[chat_id] - 1]
 
     async def get_client(self, chat_id: int):
         if chat_id not in self.assistant:
             await self.get_assistant(chat_id)
-        return {1: userbot.one, 2: userbot.two, 3: userbot.three}.get(
-            self.assistant[chat_id]
-        )
+        # Dinamik asistan eşleşmesi
+        client_map = {i+1: client for i, client in enumerate(userbot.clients)}
+        return client_map.get(self.assistant[chat_id], userbot.one)
 
-    # KARALİSTE (BLACKLIST) METOTLARI
+    # --- KARALİSTE (BLACKLIST) METOTLARI ---
     async def add_blacklist(self, chat_id: int) -> None:
         if str(chat_id).startswith("-"):
-            self.blacklisted.append(chat_id)
-            return await self.cache.update_one(
+            if chat_id not in self.blacklisted:
+                self.blacklisted.append(chat_id)
+            await self.cache.update_one(
                 {"_id": "bl_chats"}, {"$addToSet": {"chat_ids": chat_id}}, upsert=True
             )
-        await self.cache.update_one(
-            {"_id": "bl_users"}, {"$addToSet": {"user_ids": chat_id}}, upsert=True
-        )
+        else:
+            await self.cache.update_one(
+                {"_id": "bl_users"}, {"$addToSet": {"user_ids": chat_id}}, upsert=True
+            )
 
     async def del_blacklist(self, chat_id: int) -> None:
         if str(chat_id).startswith("-"):
-            self.blacklisted.remove(chat_id)
-            return await self.cache.update_one(
-                {"_id": "bl_chats"},
-                {"$pull": {"chat_ids": chat_id}},
+            if chat_id in self.blacklisted:
+                self.blacklisted.remove(chat_id)
+            await self.cache.update_one(
+                {"_id": "bl_chats"}, {"$pull": {"chat_ids": chat_id}}
             )
-        await self.cache.update_one(
-            {"_id": "bl_users"},
-            {"$pull": {"user_ids": chat_id}},
-        )
+        else:
+            await self.cache.update_one(
+                {"_id": "bl_users"}, {"$pull": {"user_ids": chat_id}}
+            )
 
     async def get_blacklisted(self, chat: bool = False) -> list[int]:
         if chat:
             if not self.blacklisted:
                 doc = await self.cache.find_one({"_id": "bl_chats"})
-                self.blacklisted.extend(doc.get("chat_ids", []) if doc else [])
+                self.blacklisted = doc.get("chat_ids", []) if doc else []
             return self.blacklisted
         doc = await self.cache.find_one({"_id": "bl_users"})
         return doc.get("user_ids", []) if doc else []
 
-    # SOHBET (CHAT) METOTLARI
+    # --- SOHBET (CHAT) METOTLARI ---
     async def is_chat(self, chat_id: int) -> bool:
         return chat_id in self.chats
 
     async def add_chat(self, chat_id: int) -> None:
         if not await self.is_chat(chat_id):
             self.chats.append(chat_id)
-            await self.chatsdb.insert_one({"_id": chat_id})
+            await self.chatsdb.update_one({"_id": chat_id}, {"$set": {"_id": chat_id}}, upsert=True)
 
     async def rm_chat(self, chat_id: int) -> None:
         if await self.is_chat(chat_id):
@@ -191,10 +180,10 @@ class MongoDB:
 
     async def get_chats(self) -> list:
         if not self.chats:
-            self.chats.extend([chat["_id"] async for chat in self.chatsdb.find()])
+            self.chats = [chat["_id"] async for chat in self.chatsdb.find()]
         return self.chats
 
-    # KOMUT SİLME (COMMAND DELETE)
+    # --- KOMUT SİLME (COMMAND DELETE) ---
     async def get_cmd_delete(self, chat_id: int) -> bool:
         if chat_id not in self.cmd_delete:
             doc = await self.chatsdb.find_one({"_id": chat_id})
@@ -210,18 +199,12 @@ class MongoDB:
             if chat_id in self.cmd_delete:
                 self.cmd_delete.remove(chat_id)
         await self.chatsdb.update_one(
-            {"_id": chat_id},
-            {"$set": {"cmd_delete": delete}},
-            upsert=True,
+            {"_id": chat_id}, {"$set": {"cmd_delete": delete}}, upsert=True
         )
 
-    # DİL (LANGUAGE) METOTLARI
+    # --- DİL (LANGUAGE) METOTLARI ---
     async def set_lang(self, chat_id: int, lang_code: str):
-        await self.langdb.update_one(
-            {"_id": chat_id},
-            {"$set": {"lang": lang_code}},
-            upsert=True,
-        )
+        await self.langdb.update_one({"_id": chat_id}, {"$set": {"lang": lang_code}}, upsert=True)
         self.lang[chat_id] = lang_code
 
     async def get_lang(self, chat_id: int) -> str:
@@ -232,35 +215,26 @@ class MongoDB:
 
     # --- DÖNGÜ (LOOP) METOTLARI ---
     async def set_loop(self, chat_id: int, mode: int):
-        await self.chatsdb.update_one(
-            {"_id": chat_id},
-            {"$set": {"loop": mode}},
-            upsert=True,
-        )
+        await self.chatsdb.update_one({"_id": chat_id}, {"$set": {"loop": mode}}, upsert=True)
 
     async def get_loop(self, chat_id: int) -> int:
         doc = await self.chatsdb.find_one({"_id": chat_id})
         return doc.get("loop", 0) if doc else 0
 
-    # LOGLAYICI (LOGGER) METOTLARI
+    # --- LOGLAYICI (LOGGER) METOTLARI ---
     async def is_logger(self) -> bool:
         return self.logger
 
     async def get_logger(self) -> bool:
         doc = await self.cache.find_one({"_id": "logger"})
-        if doc:
-            self.logger = doc["status"]
+        self.logger = doc.get("status", False) if doc else False
         return self.logger
 
     async def set_logger(self, status: bool) -> None:
         self.logger = status
-        await self.cache.update_one(
-            {"_id": "logger"},
-            {"$set": {"status": status}},
-            upsert=True,
-        )
+        await self.cache.update_one({"_id": "logger"}, {"$set": {"status": status}}, upsert=True)
 
-    # OYNATMA MODU (PLAY MODE) METOTLARI
+    # --- OYNATMA MODU (PLAY MODE) METOTLARI ---
     async def get_play_mode(self, chat_id: int) -> bool:
         if chat_id not in self.admin_play:
             doc = await self.chatsdb.find_one({"_id": chat_id})
@@ -276,12 +250,10 @@ class MongoDB:
             if chat_id not in self.admin_play:
                 self.admin_play.append(chat_id)
         await self.chatsdb.update_one(
-            {"_id": chat_id},
-            {"$set": {"admin_play": not remove}},
-            upsert=True,
+            {"_id": chat_id}, {"$set": {"admin_play": not remove}}, upsert=True
         )
 
-    # SUDO METOTLARI
+    # --- SUDO METOTLARI ---
     async def add_sudo(self, user_id: int) -> None:
         await self.cache.update_one(
             {"_id": "sudoers"}, {"$addToSet": {"user_ids": user_id}}, upsert=True
@@ -296,14 +268,14 @@ class MongoDB:
         doc = await self.cache.find_one({"_id": "sudoers"})
         return doc.get("user_ids", []) if doc else []
 
-    # KULLANICI (USER) METOTLARI
+    # --- KULLANICI (USER) METOTLARI ---
     async def is_user(self, user_id: int) -> bool:
         return user_id in self.users
 
     async def add_user(self, user_id: int) -> None:
         if not await self.is_user(user_id):
             self.users.append(user_id)
-            await self.usersdb.insert_one({"_id": user_id})
+            await self.usersdb.update_one({"_id": user_id}, {"$set": {"_id": user_id}}, upsert=True)
 
     async def rm_user(self, user_id: int) -> None:
         if await self.is_user(user_id):
@@ -312,60 +284,63 @@ class MongoDB:
 
     async def get_users(self) -> list:
         if not self.users:
-            self.users.extend([user["_id"] async for user in self.usersdb.find()])
+            self.users = [user["_id"] async for user in self.usersdb.find()]
         return self.users
 
-
+    # --- TAŞIMA (MIGRATION) METODU ---
     async def migrate_coll(self) -> None:
-        from bson import ObjectId
-        logger.info("Eski koleksiyonlardan kullanıcılar ve sohbetler taşınıyor...")
+        logger.info("Eski koleksiyonlardan veriler taşınıyor...")
+        
+        # Kullanıcıları taşı
+        musers = []
+        done_users = set()
+        
+        # Eski ve yeni tabloları tara
+        async for user in self.db.tgusersdb.find():
+            uid = user.get("user_id") if isinstance(user.get("_id"), ObjectId) else user.get("_id")
+            if uid and int(uid) not in done_users:
+                musers.append({"_id": int(uid)})
+                done_users.add(int(uid))
 
-        musers, mchats, done = [], [], []
-        ulist = [user async for user in self.db.tgusersdb.find()]
-        ulist.extend([user async for user in self.usersdb.find()])
+        async for user in self.usersdb.find():
+            uid = user.get("user_id") if isinstance(user.get("_id"), ObjectId) else user.get("_id")
+            if uid and int(uid) not in done_users:
+                musers.append({"_id": int(uid)})
+                done_users.add(int(uid))
 
-        for user in ulist:
-            if isinstance(user.get("_id"), ObjectId):
-                user_id = int(user["user_id"])
-                if user_id in done:
-                    continue
-                done.append(user_id)
-                musers.append(user)
-            else:
-                user_id = int(user["_id"])
-                if user_id in done:
-                    continue
-                done.append(user_id)
-                musers.append({"_id": user_id})
-        await self.usersdb.drop()
-        await self.db.tgusersdb.drop()
         if musers:
-            await self.usersdb.insert_many(musers)
+            await self.usersdb.drop()
+            try:
+                await self.usersdb.insert_many(musers, ordered=False)
+            except Exception:
+                pass # Hatalı kayıtları atla
 
+        # Sohbetleri taşı
+        mchats = []
+        done_chats = set()
         async for chat in self.chatsdb.find():
-            if isinstance(chat.get("_id"), ObjectId):
-                chat_id = int(chat["chat_id"])
-                if chat_id in mchats:
-                    continue
-                done.append(chat_id)
-                mchats.append(chat)
-            else:
-                chat_id = int(chat["_id"])
-                if chat_id in done:
-                    continue
-                done.append(chat_id)
-                mchats.append({"_id": chat_id})
-        await self.chatsdb.drop()
+            cid = chat.get("chat_id") if isinstance(chat.get("_id"), ObjectId) else chat.get("_id")
+            if cid and int(cid) not in done_chats:
+                mchats.append({"_id": int(cid)})
+                done_chats.add(int(cid))
+        
         if mchats:
-            await self.chatsdb.insert_many(mchats)
+            await self.chatsdb.drop()
+            try:
+                await self.chatsdb.insert_many(mchats, ordered=False)
+            except Exception:
+                pass
 
-        await self.cache.insert_one({"_id": "migrated"})
+        await self.cache.update_one({"_id": "migrated"}, {"$set": {"status": True}}, upsert=True)
         logger.info("Taşıma işlemi tamamlandı.")
 
     async def load_cache(self) -> None:
         doc = await self.cache.find_one({"_id": "migrated"})
         if not doc:
-            await self.migrate_coll()
+            try:
+                await self.migrate_coll()
+            except Exception as e:
+                logger.error(f"Migration error: {e}")
 
         await self.get_chats()
         await self.get_users()
