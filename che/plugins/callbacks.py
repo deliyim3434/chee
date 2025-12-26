@@ -35,18 +35,18 @@ async def _controls(_, query: types.CallbackQuery):
     if action == "pause":
         if not await db.playing(chat_id):
             return await query.answer(query.lang["play_already_paused"], show_alert=True)
-        await anon.pause(chat_id)
+        await che.pause(chat_id)
         status = query.lang["paused"]
         reply = query.lang["play_paused"].format(user)
 
     elif action == "resume":
         if await db.playing(chat_id):
             return await query.answer(query.lang["play_not_paused"], show_alert=True)
-        await anon.resume(chat_id)
+        await che.resume(chat_id)
         reply = query.lang["play_resumed"].format(user)
 
     elif action == "skip":
-        await anon.play_next(chat_id)
+        await che.play_next(chat_id)
         status = query.lang["skipped"]
         reply = query.lang["play_skipped"].format(user)
         should_delete_msg = True
@@ -71,27 +71,27 @@ async def _controls(_, query: types.CallbackQuery):
              return await query.edit_message_text(query.lang["play_expired"])
 
     elif action == "replay":
-        await anon.replay(chat_id)
+        await che.replay(chat_id)
         status = query.lang["replayed"]
         reply = query.lang["play_replayed"].format(user)
         should_delete_msg = True
 
     elif action == "stop":
-        await anon.stop(chat_id)
+        await che.stop(chat_id)
         status = query.lang["stopped"]
         reply = query.lang["play_stopped"].format(user)
         should_delete_msg = True
 
     elif action == "seek":
         seek_seconds = int(args[3]) if len(args) > 3 else 10
-        await anon.seek(chat_id, seek_seconds)
+        await che.seek(chat_id, seek_seconds)
         status = query.lang["seeked"]
         reply = query.lang["play_seeked"].format(seek_seconds, user)
         should_delete_msg = True
 
     elif action == "seekback":
         seek_seconds = int(args[3]) if len(args) > 3 else 10
-        await anon.seek(chat_id, -seek_seconds)
+        await che.seek(chat_id, -seek_seconds)
         status = query.lang["seeked_back"]
         reply = query.lang["play_seeked_back"].format(seek_seconds, user)
         should_delete_msg = True
