@@ -37,8 +37,8 @@ class Inline:
             # --- 1. SATIR: DÖNGÜ ve TEKRAR (BURASI EKLENDİ) ---
             # Loop butonu: 'controls loop' komutunu tetikler
             keyboard.append([
-                self.ikb(text="🔁 DÖNGÜ (3x)", callback_data=f"controls loop {chat_id}"),
-                self.ikb(text="↻ BAŞA SAR", callback_data=f"controls replay {chat_id}")
+                self.ikb(text="TEKRAR", callback_data=f"controls loop {chat_id}"),
+                
             ])
 
             # --- 2. SATIR: OYNATMA KONTROLLERİ ---
