@@ -22,7 +22,7 @@ async def _controls(_, query: types.CallbackQuery):
         return await query.answer(query.lang["not_playing"], show_alert=True)
 
     if action == "status":
-        return await query.answer("Müzik çalıyor...", show_alert=False)
+        return await query.answer(query.lang.get("playing_status", "Müzik çalıyor..."), show_alert=False)
 
     await query.answer(query.lang["processing"], show_alert=False)
 
@@ -51,37 +51,41 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_skipped"].format(user)
         should_delete_msg = True
 
-    elif action == "loop":
-        # 3 kere tekrar mantığı
-        loop_count = await db.get_loop_count(chat_id)
-        if loop_count > 0:
-            await db.set_loop_count(chat_id, 0)
-            status = "Döngü Kapalı"
-            reply = "🔁 **Döngü kapatıldı.**\nDüzenleyen: {}".format(user)
-        else:
-            await db.set_loop_count(chat_id, 3) # 3 tekrar hakkı verir
-            status = "3x Döngü"
-            reply = "🔁 **Şarkı 3 kez tekrar edilecek.**\nDüzenleyen: {}".format(user)
-
     elif action == "force":
         if len(args) >= 4:
             pos, media = queue.check_item(chat_id, args[3])
             if media and pos != -1:
-                m_id = queue.get_current(chat_id).message_id
+                # Mevcut çalınan mesajı al
+                current_item = queue.get_current(chat_id)
+                m_id = current_item.message_id if current_item else None
+                
                 queue.force_add(chat_id, media, remove=pos)
+                
+                # Eski mesajları silmeye çalış
+                to_delete = [m_id, media.message_id] if m_id else [media.message_id]
                 try:
-                    await app.delete_messages(chat_id=chat_id, message_ids=[m_id, media.message_id], revoke=True)
+                    await app.delete_messages(chat_id=chat_id, message_ids=[i for i in to_delete if i], revoke=True)
                     media.message_id = None
                 except:
                     pass
+                
                 msg = await app.send_message(chat_id=chat_id, text=query.lang["play_next"])
+                
                 if not media.file_path:
                     media.file_path = await yt.download(media.id, video=media.video)
+                
                 media.message_id = msg.id
-                # 'anon' yerine 'che' kullanılması muhtemeldir
+                
+                # anon yerine che kullanıldı
                 return await che.play_media(chat_id, msg, media)
         else:
              return await query.edit_message_text(query.lang["play_expired"])
+
+    elif action == "loop":
+        await che.loop(chat_id, 3) 
+        status = query.lang["loopped"]
+        reply = query.lang["play_loopped"].format(user)
+        should_delete_msg = True # İstediğiniz gibi True yapıldı
 
     elif action == "replay":
         await che.replay(chat_id)
@@ -109,11 +113,13 @@ async def _controls(_, query: types.CallbackQuery):
         reply = query.lang["play_seeked_back"].format(seek_seconds, user)
         should_delete_msg = True
 
+    
     if not reply and not status:
         return
 
     try:
         if should_delete_msg:
+            # Skip, Loop, Stop, Seek gibi işlemlerde yeni mesaj atılır, eskisi silinir
             await query.message.reply_text(reply, quote=False)
             if action not in ["seek", "seekback"]:
                 try:
@@ -121,6 +127,7 @@ async def _controls(_, query: types.CallbackQuery):
                 except:
                     pass
         else:
+            # Pause, Resume gibi işlemlerde mevcut mesaj güncellenir
             if query.message.caption:
                 original_html = query.message.caption.html
                 is_media = True
@@ -128,10 +135,10 @@ async def _controls(_, query: types.CallbackQuery):
                 original_html = query.message.text.html
                 is_media = False
 
-            # Eski blockquote metnini temizle
             clean_text = re.sub(r"\n\n<blockquote>.*?</blockquote>", "", original_html, flags=re.DOTALL)
             
             markup = buttons.controls(chat_id, status=status if action != "resume" else None)
+            
             final_text = f"{clean_text}\n\n<blockquote>{reply}</blockquote>"
 
             if is_media:
@@ -141,8 +148,10 @@ async def _controls(_, query: types.CallbackQuery):
 
     except Exception as e:
         print(f"Controls Error: {e}")
-
-# --- YARDIM VE AYARLAR BÖLÜMÜ ---
+        try:
+             await query.answer("İşlem gerçekleştirildi.", show_alert=False)
+        except:
+            pass
 
 @app.on_callback_query(filters.regex("help") & ~app.bl_users)
 @lang.language()
