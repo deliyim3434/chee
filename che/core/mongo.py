@@ -1,6 +1,6 @@
 # Copyright (c) 2025 AnonymousX1025
 # Licensed under the MIT License.
-# This file is part of AnonXMusic
+# This file is part of CheXMusic
 
 
 from random import randint
@@ -8,6 +8,7 @@ from time import time
 
 from pymongo import AsyncMongoClient
 
+# DEĞİŞİKLİK: anony -> che
 from che import config, logger, userbot
 
 
@@ -17,7 +18,8 @@ class MongoDB:
         MongoDB bağlantısını başlatır.
         """
         self.mongo = AsyncMongoClient(config.MONGO_URL, serverSelectionTimeoutMS=12500)
-        self.db = self.mongo.Anon
+        # DEĞİŞİKLİK: Anon -> Che (Veritabanı adı)
+        self.db = self.mongo.Che
 
         self.admin_list = {}
         self.active_calls = {}
@@ -78,6 +80,7 @@ class MongoDB:
         return bool(self.active_calls.get(chat_id, 0))
 
     async def get_admins(self, chat_id: int, reload: bool = False) -> list[int]:
+        # DEĞİŞİKLİK: anony -> che
         from che.helpers._admins import reload_admins
 
         if chat_id not in self.admin_list or reload:
@@ -122,14 +125,16 @@ class MongoDB:
         return num
 
     async def get_assistant(self, chat_id: int):
-        from anony import anon
+        # DEĞİŞİKLİK: anony -> che ve anon -> che
+        from che import che
 
         if chat_id not in self.assistant:
             doc = await self.assistantdb.find_one({"_id": chat_id})
             num = doc["num"] if doc else await self.set_assistant(chat_id)
             self.assistant[chat_id] = num
 
-        return anon.clients[self.assistant[chat_id] - 1]
+        # DEĞİŞİKLİK: anon -> che
+        return che.clients[self.assistant[chat_id] - 1]
 
     async def get_client(self, chat_id: int):
         if chat_id not in self.assistant:
@@ -225,7 +230,7 @@ class MongoDB:
             self.lang[chat_id] = doc["lang"] if doc else "en"
         return self.lang[chat_id]
 
-    # --- DÖNGÜ (LOOP) METOTLARI (YENİ EKLENDİ) ---
+    # --- DÖNGÜ (LOOP) METOTLARI ---
     async def set_loop(self, chat_id: int, mode: int):
         await self.chatsdb.update_one(
             {"_id": chat_id},
