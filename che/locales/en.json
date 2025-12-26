@@ -145,6 +145,6 @@
   "play_seeked": "{1} tarafından {0} saniye ileri alındı.",
   "play_seeked_back": "{1} tarafından {0} saniye geri alındı.",
   "loopped": "Döngü (3x)",
-    "play_loopped": "{1} tarafından oynatma listesi 3 kez döngüye alındı.",
+    "play_loopped": "{} tarafından oynatma listesi 3 kez döngüye alındı.",
   "help_etiket": "<b><u>🤖 ETİKET VE OYUN MENÜSÜ</u></b>\n\n<b>👥 Grup Yönetimi:</b>\n/chatmode - Yapay zekayı açar\n/tag - Üyeleri etiketler\n/utag - Toplu etiketleme\n\n<b>📢 Duyurular:</b>\n/guntag - Günaydın mesajı\n/gecetag - İyi geceler mesajı\n\n<b>🎮 Oyunlar:</b>\n/tabutag - Tabu\n/kurttag - Kurt Adam\n/anonimtag - Anonim Chat\n/d - Doğruluk\n/c - Cesaret\n\n<b>🎲 Mini Oyunlar:</b>\n/zar, /dart, /basket, /futbol, /bowling, /slot\n\n<b>💘 Eğlence:</b>\n/eros - Aşk Ölçer\n/para - Bakiye\n/mani, /saka, /slap, /oner"
 }
