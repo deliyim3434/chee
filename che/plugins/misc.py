@@ -10,10 +10,10 @@ from che import che, app, config, db, lang, queue, tasks, userbot, yt
 from che.helpers import buttons
 
 
-@app.on_message(filters.video_chat_started, group=19)
-@app.on_message(filters.video_chat_ended, group=20)
+@app.on_message(filters.video_chat_started, group=40)
+@app.on_message(filters.video_chat_ended, group=40)
 async def _watcher_vc(_, m: types.Message):
-    await anon.stop(m.chat.id)
+    await che.stop(m.chat.id)
 
 
 async def auto_leave():
