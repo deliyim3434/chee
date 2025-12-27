@@ -2,13 +2,11 @@ from pyrogram import filters, types
 from che import app, lang, db
 from che.helpers import admin_check
 
-# --- HATA ÇÖZÜMÜ ---
-# "from che.utils.inline import close_markup" satırı hata verdiği için sildik.
-# Onun yerine, o fonksiyonu aşağıda manuel olarak tanımlıyoruz.
+# --- KAPATMA BUTONU FONKSİYONU ---
 def close_markup(_):
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    # Dil dosyasında varsa oradan, yoksa varsayılan metni kullan
-    btn_text = _["close"] if "close" in _ else "❌ Kapat"
+    # Eğer dil verisi boşsa veya 'close' anahtarı yoksa "❌ Kapat" yazsın
+    btn_text = _["close"] if (_ and "close" in _) else "❌ Kapat"
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(text=btn_text, callback_data="close")]]
     )
@@ -16,7 +14,14 @@ def close_markup(_):
 @app.on_message(filters.command(["loop", "döngü", "tekrar"]) & filters.group)
 @admin_check
 @lang.language()
-async def loop_command(client, message: types.Message, _):
+# HATA ÇÖZÜMÜ: "_=None" yaparak bu argümanı isteğe bağlı hale getirdik.
+# Böylece sistem bu argümanı gönderemese bile bot çökmez.
+async def loop_command(client, message: types.Message, _=None):
+    # Eğer sistem dil dosyasını (_) gönderemediyse, hata vermemesi için boş bir sözlük oluşturuyoruz.
+    # Bu sayede kod aşağıdaki 'else' kısımlarındaki varsayılan Türkçe metinleri kullanır.
+    if not _:
+        _ = {}
+
     # Komutun yanındaki argümanı al (Örn: /loop 3 -> args=["loop", "3"])
     args = message.command
     
