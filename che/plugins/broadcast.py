@@ -23,7 +23,7 @@ async def _broadcast(_, message: types.Message):
     count, ucount = 0, 0
     groups, users = [], []
     
-    status_msg = await message.reply_text("🔍 Veriler toplanıyor ve yayın hazırlanıyor...")
+    status_msg = await message.reply_text("🔍 Veritabanı taranıyor, binlerce hedef hazırlanıyor...")
 
     # 3. Veritabanından hedefleri çekme
     try:
@@ -34,40 +34,30 @@ async def _broadcast(_, message: types.Message):
     except Exception as e:
         return await status_msg.edit_text(f"❌ Veritabanı hatası: {e}")
 
-    # Tekil ID listesi oluştur (aynı yere iki kez gitmesin)
+    # Mükerrer kayıtları temizle (Aynı ID'ye iki kez gitmesin)
     all_targets = list(set(groups + users))
+    total_targets = len(all_targets)
     
     if not all_targets:
         return await status_msg.edit_text("❌ Yayın yapılacak hedef bulunamadı.")
 
     broadcasting = True
-    await status_msg.edit_text(f"🚀 Yayın başladı!\nToplam Hedef: {len(all_targets)}")
+    await status_msg.edit_text(f"🚀 Yayın başladı!\n📊 Toplam Hedef: `{total_targets}`\n⏳ İşlem devam ediyor...")
 
     # 4. Logger Bildirimi
     try:
         await msg.forward(app.logger)
-        log_notif = await app.send_message(
-            chat_id=app.logger,
-            text=f"📢 **Yayın Başlatıldı**\n**Admin:** {message.from_user.mention}\n**ID:** `{message.from_user.id}`"
-        )
-        await log_notif.pin()
     except:
         pass
-
-    failed_reasons = {}
 
     # 5. Ana Yayın Döngüsü
     for chat_id in all_targets:
         if not broadcasting:
             break
 
-        # ID doğrula
         try:
             target = int(chat_id)
-        except:
-            continue
-
-        try:
+            
             # Mesajı Gönder (Kopyala veya İlet)
             if "-copy" in message.text:
                 await msg.copy(target, reply_markup=msg.reply_markup)
@@ -79,59 +69,50 @@ async def _broadcast(_, message: types.Message):
             else:
                 ucount += 1
             
-            # Spam koruması
+            # Her 20 mesajda bir admini bilgilendir (Binlerce grupta donma hissini engeller)
+            if (count + ucount) % 20 == 0:
+                try:
+                    await status_msg.edit_text(
+                        f"⏳ **Yayın Devam Ediyor...**\n"
+                        f"✅ Başarılı: `{count + ucount}` / `{total_targets}`\n"
+                        f"👥 Gruplar: `{count}` | 👤 Üyeler: `{ucount}`"
+                    )
+                except:
+                    pass
+
+            # Spam koruması için kısa mola (Binlerce grup için ideal süre)
             await asyncio.sleep(0.3)
 
         except errors.FloodWait as fw:
-            # FloodWait süresi çok uzunsa bekle, ancak makul süreleri otomatik yönet
-            await asyncio.sleep(fw.value + 2)
+            # Telegram sınırı: fw.value saniye bekle
+            await asyncio.sleep(fw.value + 5)
         
         except (errors.UserIsBlocked, errors.InputUserDeactivated, errors.PeerIdInvalid, 
                 errors.ChatWriteForbidden, errors.ChatAdminRequired, errors.ChannelPrivate, errors.ChannelInvalid):
-            # VERİTABANI SİLME HATASINI BURADA YAKALIYORUZ
+            # Akıllı Temizlik: Fonksiyon ismi ne olursa olsun bulup siler, hata vermez
             try:
-                # Burada db nesnesinde hangi fonksiyon varsa onu dener, yoksa çökmez
-                if target in users:
-                    if hasattr(db, "remove_user"):
-                        await db.remove_user(target)
-                    elif hasattr(db, "delete_user"):
-                        await db.delete_user(target)
-                else:
-                    if hasattr(db, "remove_chat"):
-                        await db.remove_chat(target)
-                    elif hasattr(db, "delete_chat"):
-                        await db.delete_chat(target)
+                for func_name in ["remove_user", "delete_user", "remove_chat", "delete_chat", "remove_served_chat"]:
+                    if hasattr(db, func_name):
+                        func = getattr(db, func_name)
+                        await func(target)
+                        break
             except:
-                pass # Silme fonksiyonu hatalıysa bile yayına devam et
+                pass # Silme fonksiyonu hatalıysa bile yayını bozma
             
-        except Exception as ex:
-            err_name = type(ex).__name__
-            failed_reasons[err_name] = failed_reasons.get(err_name, 0) + 1
+        except Exception:
             continue
 
     # 6. Sonuç Bildirimi
     broadcasting = False
-    # Lang dosyasındaki gcast_end formatına göre düzenlendi
-    try:
-        final_text = message.lang["gcast_end"].format(count, ucount)
-    except:
-        final_text = f"Gruplar: {count}\nKullanıcılar: {ucount}"
     
-    if failed_reasons:
-        report_path = "broadcast_report.txt"
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write("--- Yayın Hata Raporu ---\n")
-            for err, c in failed_reasons.items():
-                f.write(f"Hata: {err} | Adet: {c}\n")
-        
-        await message.reply_document(
-            document=report_path,
-            caption=f"✅ **Yayın Tamamlandı**\n{final_text}\n\n⚠️ Temizlik sırasında bazı veritabanı hataları oluşmuş olabilir."
-        )
-        if os.path.exists(report_path):
-            os.remove(report_path)
-    else:
-        await status_msg.edit_text(f"✅ **Yayın Başarıyla Tamamlandı!**\n{final_text}")
+    final_report = (
+        f"✅ **Yayın Başarıyla Tamamlandı!**\n\n"
+        f"👥 **Toplam Grup:** `{count}`\n"
+        f"👤 **Toplam Kullanıcı:** `{ucount}`\n"
+        f"❌ **Ulaşılamayan:** `{total_targets - (count + ucount)}`"
+    )
+    
+    await status_msg.edit_text(final_report)
 
 @app.on_message(filters.command(["stop_broadcast"]) & app.sudoers)
 async def _stop_broadcast(_, message: types.Message):
@@ -140,4 +121,4 @@ async def _stop_broadcast(_, message: types.Message):
         return await message.reply_text("❌ Şu an aktif bir yayın yok.")
     
     broadcasting = False
-    await message.reply_text("🛑 Yayın durdurma sinyali gönderildi.")
+    await message.reply_text("🛑 Yayın durdurma sinyali gönderildi. İşlem birazdan sonlanacak.")
