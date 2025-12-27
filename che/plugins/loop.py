@@ -2,7 +2,7 @@ from pyrogram import filters, types
 # KRİTİK DÜZELTME BURADA:
 from app.che import app, lang, db
 from app.che.helpers import admin_check
-from app.che.utils.inline import close_markup
+
 
 # ... kodun geri kalanı aynı ...
 @app.on_message(filters.command(["loop", "döngü", "tekrar"]) & filters.group)
