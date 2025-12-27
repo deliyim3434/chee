@@ -1,13 +1,14 @@
 from pyrogram import filters, types
-from che import app, lang, db
-from che.helpers import admin_check
-from che.utils.inline import close_markup
+# İMPORTLARI DÜZELTME: 'che' yerine 'app.che' kullanıyoruz
+from app.che import app, lang, db
+from app.che.helpers import admin_check
+from app.che.utils.inline import close_markup
 
 @app.on_message(filters.command(["loop", "döngü", "tekrar"]) & filters.group)
 @admin_check
 @lang.language()
 async def loop_command(client, message: types.Message, _):
-    # Komutun yanındaki argümanı al (Örn: /loop 3 -> args=["3"])
+    # Komutun yanındaki argümanı al (Örn: /loop 3 -> args=["loop", "3"])
     args = message.command
     
     # Eğer sadece /loop yazıldıysa kullanım kılavuzu göster
