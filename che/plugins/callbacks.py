@@ -1,6 +1,6 @@
 import re
 from pyrogram import filters, types
-from che import anon, app, db, lang, queue, tg, yt
+from che import che, app, db, lang, queue, tg, yt
 from che.helpers import admin_check, buttons, can_manage_vc
 
 @app.on_callback_query(filters.regex("cancel_dl") & ~app.bl_users)
