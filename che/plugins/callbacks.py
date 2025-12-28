@@ -1,217 +1,215 @@
-import re
-from pyrogram import filters, types
-from che import che, app, db, lang, queue, tg, yt
-from che.helpers import admin_check, buttons, can_manage_vc
 
-@app.on_callback_query(filters.regex("cancel_dl") & ~app.bl_users)
-@lang.language()
-async def cancel_dl(_, query: types.CallbackQuery):
-    await query.answer()
-    await tg.cancel(query)
 
-@app.on_callback_query(filters.regex("controls") & ~app.bl_users)
-@lang.language()
-@can_manage_vc
-async def _controls(_, query: types.CallbackQuery):
-    try:
-        args = query.data.split()
-        action = args[1]
-        chat_id = int(args[2])
-        user = query.from_user.mention
+import time
+from ntgcalls import (ConnectionNotFound, TelegramServerError,
+                      RTMPStreamingUnsupported)
+from pyrogram.errors import MessageIdInvalid
+from pyrogram.types import Message
+from pytgcalls import PyTgCalls, exceptions, types
+from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-        if not await db.get_call(chat_id):
-            return await query.answer(query.lang["not_playing"], show_alert=True)
+from che import app, config, db, lang, logger, queue, userbot, yt
+from che.helpers import Media, Track, buttons
 
-        if action == "status":
-            return await query.answer(query.lang.get("playing_status", "Müzik çalıyor..."), show_alert=False)
+class TgCall(PyTgCalls):
+    def __init__(self):
+        self.clients = []
 
-        await query.answer(query.lang["processing"], show_alert=False)
+    async def pause(self, chat_id: int) -> bool:
+        client = await db.get_assistant(chat_id)
+        await db.playing(chat_id, paused=True)
+        return await client.pause(chat_id)
 
-        status = None
-        reply = None
-        should_delete_msg = False 
+    async def resume(self, chat_id: int) -> bool:
+        client = await db.get_assistant(chat_id)
+        await db.playing(chat_id, paused=False)
+        return await client.resume(chat_id)
 
-        # --- EYLEMLER ---
+    async def stop(self, chat_id: int) -> None:
+        client = await db.get_assistant(chat_id)
+        try:
+            queue.clear(chat_id)
+            await db.remove_call(chat_id)
+        except:
+            pass
 
-        if action == "pause":
-            if not await db.playing(chat_id):
-                return await query.answer(query.lang["play_already_paused"], show_alert=True)
-            await che.pause(chat_id)
-            status = query.lang["paused"]
-            reply = query.lang["play_paused"].format(user)
+        try:
+            await client.leave_call(chat_id, close=False)
+        except:
+            pass
 
-        elif action == "resume":
-            if await db.playing(chat_id):
-                return await query.answer(query.lang["play_not_paused"], show_alert=True)
-            await che.resume(chat_id)
-            reply = query.lang["play_resumed"].format(user)
-
-        elif action == "skip":
-            await che.play_next(chat_id)
-            status = query.lang["skipped"]
-            reply = query.lang["play_skipped"].format(user)
-            should_delete_msg = True
-
-        elif action == "force":
-            if len(args) >= 4:
-                media_id = args[3]
-                pos, media = queue.check_item(chat_id, media_id)
-                if media and pos != -1:
-                    # Mevcut çalınan mesajı al
-                    current_item = queue.get_current(chat_id)
-                    m_id = current_item.message_id if current_item else None
-                    
-                    queue.force_add(chat_id, media, remove=pos)
-                    
-                    # Eski mesajları silmeye çalış (None değerleri filtrele)
-                    to_delete = [i for i in [m_id, media.message_id] if i]
-                    if to_delete:
-                        try:
-                            await app.delete_messages(chat_id=chat_id, message_ids=to_delete, revoke=True)
-                        except Exception:
-                            pass
-                    
-                    # Medya ID'sini sıfırla çünkü yeni mesaj atılacak
-                    media.message_id = None
-                    
-                    msg = await app.send_message(chat_id=chat_id, text=query.lang["play_next"])
-                    
-                    if not media.file_path:
-                        media.file_path = await yt.download(media.id, video=media.video)
-                    
-                    media.message_id = msg.id
-                    
-                    return await che.play_media(chat_id, msg, media)
-            else:
-                 return await query.edit_message_text(query.lang["play_expired"])
-
-        elif action == "loop":
-            # HATA DÜZELTME: che.loop yerine veritabanı ayarı kullanılıyor.
-            # Eğer db.set_loop fonksiyonunuz yoksa buradaki await satırını silip sadece pass bırakın.
-            try:
-                await db.set_loop(chat_id, 3) 
-            except AttributeError:
-                # Veritabanı fonksiyonu yoksa hata vermemesi için geçiyoruz
-                pass
-            
-            status = query.lang["loopped"]
-            reply = query.lang["play_loopped"].format(user)
-            should_delete_msg = True 
-
-        elif action == "replay":
-            await che.replay(chat_id)
-            status = query.lang["replayed"]
-            reply = query.lang["play_replayed"].format(user)
-            should_delete_msg = True
-
-        elif action == "stop":
-            await che.stop(chat_id)
-            status = query.lang["stopped"]
-            reply = query.lang["play_stopped"].format(user)
-            should_delete_msg = True
-
-        elif action == "seek":
-            seek_seconds = int(args[3]) if len(args) > 3 else 10
-            await che.seek(chat_id, seek_seconds)
-            status = query.lang["seeked"]
-            reply = query.lang["play_seeked"].format(seek_seconds, user)
-            should_delete_msg = True
-
-        elif action == "seekback":
-            seek_seconds = int(args[3]) if len(args) > 3 else 10
-            await che.seek(chat_id, -seek_seconds)
-            status = query.lang["seeked_back"]
-            reply = query.lang["play_seeked_back"].format(seek_seconds, user)
-            should_delete_msg = True
-
+    async def play_media(
+        self,
+        chat_id: int,
+        message: Message,
+        media: Media | Track,
+        seek_time: int = 0,
+    ) -> None:
+        client = await db.get_assistant(chat_id)
+        _lang = await lang.get_lang(chat_id)
         
-        if not reply and not status:
+        if not media.file_path:
+            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            return await self.play_next(chat_id)
+
+        # Video flag ayarı
+        video_flags = types.MediaStream.Flags.IGNORE
+        if media.video:
+            video_flags = types.MediaStream.Flags.AUTO_DETECT
+
+        stream = types.MediaStream(
+            media_path=media.file_path,
+            audio_parameters=types.AudioQuality.HIGH,
+            video_parameters=types.VideoQuality.HD_720p,
+            audio_flags=types.MediaStream.Flags.REQUIRED,
+            video_flags=video_flags,
+            ffmpeg_parameters=f"-ss {seek_time}" if seek_time > 0 else None,
+        )
+
+        try:
+            await client.play(
+                chat_id=chat_id,
+                stream=stream,
+                config=types.GroupCallConfig(auto_start=False),
+            )
+            
+            # Zamanlayıcıları ayarla
+            media.start_time = time.time()
+            if not seek_time:
+                media.played_prefix = 0
+                media.time = 1
+                await db.add_call(chat_id)
+                text = _lang["play_media"].format(
+                    media.url,
+                    media.title,
+                    media.duration,
+                    media.user,
+                )
+                keyboard = buttons.controls(chat_id)
+                try:
+                    await message.edit_text(
+                        text=text,
+                        reply_markup=keyboard,
+                    )
+                except MessageIdInvalid:
+                    media.message_id = (await app.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        reply_markup=keyboard,
+                    )).id
+            else:
+                # Seek yapılıyorsa played_prefix güncellenir
+                media.played_prefix = seek_time
+
+        except FileNotFoundError:
+            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            await self.play_next(chat_id)
+        except exceptions.NoActiveGroupCall:
+            await self.stop(chat_id)
+            await message.edit_text(_lang["error_no_call"])
+        except exceptions.NoAudioSourceFound:
+            await message.edit_text(_lang["error_no_audio"])
+            await self.play_next(chat_id)
+        except (ConnectionNotFound, TelegramServerError):
+            await self.stop(chat_id)
+            await message.edit_text(_lang["error_tg_server"])
+        except RTMPStreamingUnsupported:
+            await self.stop(chat_id)
+            await message.edit_text(_lang["error_rtmp"])
+
+    async def seek(self, chat_id: int, seconds: int) -> None:
+        if not await db.get_call(chat_id):
             return
 
-        # --- MESAJ GÜNCELLEME VEYA SİLME ---
-        if should_delete_msg:
-            # Skip, Loop, Stop, Seek gibi işlemlerde yeni mesaj atılır, eskisi silinir
-            await query.message.reply_text(reply, quote=False)
-            if action not in ["seek", "seekback"]:
-                try:
-                    await query.message.delete()
-                except:
-                    pass
-        else:
-            # Pause, Resume gibi işlemlerde mevcut mesaj güncellenir
-            is_media = bool(query.message.caption)
-            original_html = query.message.caption.html if is_media else query.message.text.html
+        media = queue.get_current(chat_id)
+        if not media:
+            return
 
-            # Blockquote temizliği
-            clean_text = re.sub(r"\n\n<blockquote>.*?</blockquote>", "", original_html, flags=re.DOTALL)
-            
-            markup = buttons.controls(chat_id, status=status if action != "resume" else None)
-            
-            final_text = f"{clean_text}\n\n<blockquote>{reply}</blockquote>"
-
-            if is_media:
-                await query.edit_message_caption(caption=final_text, reply_markup=markup)
-            else:
-                await query.edit_message_text(text=final_text, reply_markup=markup)
-
-    except Exception as e:
-        print(f"Controls Error: {e}")
-        # Hata olsa bile kullanıcıya cevap verelim ki buton dönüp durmasın
         try:
-             await query.answer("Bir hata oluştu, ancak işlem deneniyor.", show_alert=False)
+            msg = await app.get_messages(chat_id, media.message_id)
         except:
-            pass
+            _lang = await lang.get_lang(chat_id)
+            msg = await app.send_message(chat_id, _lang["processing"])
 
-@app.on_callback_query(filters.regex("help") & ~app.bl_users)
-@lang.language()
-async def _help(_, query: types.CallbackQuery):
-    data = query.data.split()
-    if len(data) == 1:
-        return await query.answer(url=f"https://t.me/{app.username}?start=help")
-
-    if data[1] == "back":
-        return await query.edit_message_text(
-            text=query.lang["help_menu"], reply_markup=buttons.help_markup(query.lang)
-        )
-    elif data[1] == "close":
-        try:
-            await query.message.delete()
-            return await query.message.reply_to_message.delete()
-        except:
-            pass
-
-    await query.edit_message_text(
-        text=query.lang[f"help_{data[1]}"],
-        reply_markup=buttons.help_markup(query.lang, True),
-    )
-
-@app.on_callback_query(filters.regex("settings") & ~app.bl_users)
-@lang.language()
-@admin_check
-async def _settings_cb(_, query: types.CallbackQuery):
-    cmd = query.data.split()
-    if len(cmd) == 1:
-        return await query.answer()
-    await query.answer(query.lang["processing"], show_alert=True)
-
-    chat_id = query.message.chat.id
-    _admin = await db.get_play_mode(chat_id)
-    _delete = await db.get_cmd_delete(chat_id)
-    _language = await db.get_lang(chat_id)
-
-    if cmd[1] == "delete":
-        _delete = not _delete
-        await db.set_cmd_delete(chat_id, _delete)
-    elif cmd[1] == "play":
-        await db.set_play_mode(chat_id, not _admin)
-        _admin = not _admin
+        # Süre hesaplaması
+        current_played = getattr(media, "played_prefix", 0) + (time.time() - getattr(media, "start_time", time.time()))
         
-    await query.edit_message_reply_markup(
-        reply_markup=buttons.settings_markup(
-            query.lang,
-            _admin,
-            _delete,
-            _language,
-            chat_id,
-        )
-    )
+        seek_to = int(current_played + seconds)
+        if seek_to < 0:
+            seek_to = 0
+            
+        await self.play_media(chat_id, msg, media, seek_time=seek_to)
+
+    async def replay(self, chat_id: int) -> None:
+        if not await db.get_call(chat_id):
+            return
+
+        media = queue.get_current(chat_id)
+        if not media:
+            return
+            
+        _lang = await lang.get_lang(chat_id)
+        msg = await app.send_message(chat_id=chat_id, text=_lang["play_again"])
+        await self.play_media(chat_id, msg, media)
+
+    async def play_next(self, chat_id: int) -> None:
+        media = queue.get_next(chat_id)
+        try:
+            if media and media.message_id:
+                await app.delete_messages(
+                    chat_id=chat_id,
+                    message_ids=media.message_id,
+                    revoke=True,
+                )
+                media.message_id = 0
+        except:
+            pass
+
+        if not media:
+            return await self.stop(chat_id)
+
+        _lang = await lang.get_lang(chat_id)
+        msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
+        
+        if not media.file_path:
+            media.file_path = await yt.download(media.id, video=media.video)
+            if not media.file_path:
+                await self.stop(chat_id)
+                return await msg.edit_text(
+                    _lang["error_no_file"].format(config.SUPPORT_CHAT)
+                )
+
+        media.message_id = msg.id
+        await self.play_media(chat_id, msg, media)
+
+    async def ping(self) -> float:
+        if not self.clients:
+            return 0.0
+        pings = [client.ping for client in self.clients]
+        if not pings:
+            return 0.0
+        return round(sum(pings) / len(pings), 2)
+
+    async def decorators(self, client: PyTgCalls) -> None:
+        
+        @client.on_update()
+        async def update_handler(_, update: types.Update) -> None:
+            if isinstance(update, types.StreamEnded):
+                if update.stream_type == types.StreamEnded.Type.AUDIO:
+                    await self.play_next(update.chat_id)
+            elif isinstance(update, types.ChatUpdate):
+                if update.status in [
+                    types.ChatUpdate.Status.KICKED,
+                    types.ChatUpdate.Status.LEFT_GROUP,
+                    types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
+                ]:
+                    await self.stop(update.chat_id)
+
+    async def boot(self) -> None:
+        PyTgCallsSession.notice_displayed = True
+        for ub in userbot.clients:
+            client = PyTgCalls(ub, cache_duration=100)
+            await client.start()
+            self.clients.append(client)
+            await self.decorators(client) # Client tek tek gönderiliyor
+        logger.info("PyTgCalls client(s) started.")
